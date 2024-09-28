@@ -29,7 +29,7 @@ def get_data(args: argparse.Namespace):
     if args.dataset == 'grayscale_example':
         return get_grayscale(True, './data/train', './data/train', './data/test', args.image_size, args.seed, args.validation_size)
     if args.dataset == 'waterbirds':
-        return get_pets(True, './data/PETS/dataset/train', './data/PETS/dataset/train', './data/PETS/dataset/test',
+        return get_pets(True, './data/waterbirds/train', './data/waterbirds/train', './data/waterbirds/test',
                         args.image_size, args.seed, args.validation_size)
     raise Exception(f'Could not load data set, data set "{args.dataset}" not found!')
 
