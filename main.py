@@ -329,7 +329,9 @@ def run_pipnet(args=None):
 
 
     # EVALUATE OOD DETECTION
-    ood_datasets = ["CARS", "CUB-200-2011", "pets"]
+    # ood_datasets = ["CARS", "CUB-200-2011", "pets"]
+    ood_datasets = []
+
     for percent in [95.]:
         print("\nOOD Evaluation for epoch", epoch,"with percent of", percent, flush=True)
         _, _, _, class_thresholds = get_thresholds(net, testloader, epoch, device, percent, log)
@@ -352,6 +354,9 @@ def run_pipnet(args=None):
     print("Done!", flush=True)
 
 if __name__ == '__main__':
+
+    import pydevd_pycharm
+    pydevd_pycharm.settrace('localhost', port=8000, stdoutToServer=True, stderrToServer=True)
     args = get_args()
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
