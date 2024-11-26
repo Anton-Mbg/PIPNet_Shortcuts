@@ -2,6 +2,8 @@ import os, shutil
 import argparse
 from PIL import Image, ImageDraw as D
 import torchvision
+
+from util.checkShortcuts import checkShortcuts
 from util.func import get_patch_size
 from torchvision import transforms
 import torch
@@ -86,6 +88,9 @@ def vis_pred(net, vis_test_dir, classes, device, args: argparse.Namespace):
                         draw = D.Draw(image)
                         draw.rectangle([(max_idx_w*skip,max_idx_h*skip), (min(args.image_size, max_idx_w*skip+patchsize), min(args.image_size, max_idx_h*skip+patchsize))], outline='yellow', width=2)
                         image.save(os.path.join(save_path, 'mul%s_p%s_sim%s_w%s_rect.png'%(str(f"{simweight:.3f}"),str(prototype_idx.item()),str(f"{pooled[0,prototype_idx].item():.3f}"),str(f"{net.module._classification.weight[pred_class_idx, prototype_idx].item():.3f}"))))
+
+                        #check if patch could be shortcut
+                        #checkShortcuts(net,xs,prototype_idx,max_h, max_idx_h,max_w, max_idx_w)
 
                         # visualise softmaxes as heatmap
                         if use_opencv:

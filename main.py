@@ -122,10 +122,11 @@ def run_pipnet(args=None):
     criterion = nn.NLLLoss(reduction='mean').to(device)
     scheduler_net = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_net, T_max=len(trainloader_pretraining)*args.epochs_pretrain, eta_min=args.lr_block/100., last_epoch=-1)
 
-    # Forward one batch through the backbone to get the latent output size
+    # Forward one batch (64 image-tensors) through the backbone to get the latent output size
     with torch.no_grad():
         xs1, _, _ = next(iter(trainloader))
         xs1 = xs1.to(device)
+        # extract features shape(64,768,26,26) 64 is batch size, 768 number of prototypes, 26 and 26 is coming from the cnn architecture ("convnext_tiny_26 with adapted strides to output 26x26 latent representations")
         proto_features, _, _ = net(xs1)
         wshape = proto_features.shape[-1]
         args.wshape = wshape #needed for calculating image patch size
@@ -157,6 +158,7 @@ def run_pipnet(args=None):
         print("\nPretrain Epoch", epoch, "with batch size", trainloader_pretraining.batch_size, flush=True)
         
         # Pretrain prototypes
+        #
         train_info = train_pipnet(net, trainloader_pretraining, optimizer_net, optimizer_classifier, scheduler_net, None, criterion, epoch, args.epochs_pretrain, device, pretrain=True, finetune=False)
         lrs_pretrain_net+=train_info['lrs_net']
         plt.clf()
@@ -239,9 +241,11 @@ def run_pipnet(args=None):
                     print("Classifier bias: ", net.module._classification.bias, flush=True)
                 torch.set_printoptions(profile="default")
 
+        # Hier zweiter Training Durchgang
         train_info = train_pipnet(net, trainloader, optimizer_net, optimizer_classifier, scheduler_net, scheduler_classifier, criterion, epoch, args.epochs, device, pretrain=False, finetune=finetune)
         lrs_net+=train_info['lrs_net']
         lrs_classifier+=train_info['lrs_class']
+
         # Evaluate model
         eval_info = eval_pipnet(net, testloader, epoch, device, log)
         log.log_values('log_epoch_overview', epoch, eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], train_info['train_accuracy'], train_info['loss'])
@@ -265,6 +269,11 @@ def run_pipnet(args=None):
     net.eval()
     torch.save({'model_state_dict': net.state_dict(), 'optimizer_net_state_dict': optimizer_net.state_dict(), 'optimizer_classifier_state_dict': optimizer_classifier.state_dict()}, os.path.join(os.path.join(args.log_dir, 'checkpoints'), 'net_trained_last'))
 
+    # visualize after second training phase
+    # Hier könnte man einbauen, dass über Bilder iteriert wird und Bilder aus der Liste der topk pro prototype genommen werden
+    # wo prototype nur Hintergrund ist.
+    # FRAGE: Aber dann würde so ja nur der patch aus dem prototype genommen werden oder?
+    # IDEE: Ich müsste dann eher das Gewicht dieses Prorotypen für das spezielle Bild auf Null setzen. Aber wie komme ich da ran bei den tausenden Gewichten im Classification Layer
     topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_prototypes_topk', args)
     # set weights of prototypes that are never really found in projection set to 0
     set_to_zero = []
@@ -322,14 +331,16 @@ def run_pipnet(args=None):
     visualize(net, projectloader, len(classes), device, 'visualised_prototypes', args)
     testset_img0_path = test_projectloader.dataset.samples[0][0]
     test_path = os.path.split(os.path.split(testset_img0_path)[0])[0]
-    vis_pred(net, test_path, classes, device, args) 
+    vis_pred(net, test_path, classes, device, args)
     if args.extra_test_image_folder != '':
         if os.path.exists(args.extra_test_image_folder):   
             vis_pred_experiments(net, args.extra_test_image_folder, classes, device, args)
 
 
     # EVALUATE OOD DETECTION
-    ood_datasets = ["CARS", "CUB-200-2011", "pets"]
+    # ood_datasets = ["CARS", "CUB-200-2011", "pets"]
+    ood_datasets = []
+
     for percent in [95.]:
         print("\nOOD Evaluation for epoch", epoch,"with percent of", percent, flush=True)
         _, _, _, class_thresholds = get_thresholds(net, testloader, epoch, device, percent, log)
@@ -352,6 +363,9 @@ def run_pipnet(args=None):
     print("Done!", flush=True)
 
 if __name__ == '__main__':
+
+    import pydevd_pycharm
+    pydevd_pycharm.settrace('localhost', port=8000, stdoutToServer=True, stderrToServer=True)
     args = get_args()
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
