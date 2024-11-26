@@ -16,6 +16,7 @@ import numpy as np
 from shutil import copy
 import matplotlib.pyplot as plt
 from copy import deepcopy
+from util.rm_shortcuts_manually import removeShortcutsManually
 
 def run_pipnet(args=None):
 
@@ -90,7 +91,9 @@ def run_pipnet(args=None):
         if args.state_dict_dir_net != '':
             epoch = 0
             checkpoint = torch.load(args.state_dict_dir_net,map_location=device)
-            net.load_state_dict(checkpoint['model_state_dict'],strict=True) 
+            net.load_state_dict(checkpoint['model_state_dict'],strict=True)
+            if args.dirShortcutIds != '':
+                removeShortcutsManually(net, args.dirShortcutIds)
             print("Pretrained network loaded", flush=True)
             net.module._multiplier.requires_grad = False
             try:
