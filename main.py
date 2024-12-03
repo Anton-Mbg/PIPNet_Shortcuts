@@ -17,6 +17,7 @@ from shutil import copy
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from util.rm_shortcuts_manually import removeShortcutsManually
+from util.sort_img_by_place import get_acc_per_group
 
 def run_pipnet(args=None):
 
@@ -92,8 +93,8 @@ def run_pipnet(args=None):
             epoch = 0
             checkpoint = torch.load(args.state_dict_dir_net,map_location=device)
             net.load_state_dict(checkpoint['model_state_dict'],strict=True)
-            if args.dirShortcutIds != '':
-                removeShortcutsManually(net, args.dirShortcutIds)
+           # if args.dirShortcutIds != '':
+              #  removeShortcutsManually(net, args.dirShortcutIds)
             print("Pretrained network loaded", flush=True)
             net.module._multiplier.requires_grad = False
             try:
@@ -176,7 +177,8 @@ def run_pipnet(args=None):
     with torch.no_grad():
         if 'convnext' in args.net and args.epochs_pretrain > 0:
             topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_pretrained_prototypes_topk', args)
-        
+
+   # get_acc_per_group()
     # SECOND TRAINING PHASE
     # re-initialize optimizers and schedulers for second training phase
     optimizer_net, optimizer_classifier, params_to_freeze, params_to_train, params_backbone = get_optimizer_nn(net, args)            
@@ -250,7 +252,7 @@ def run_pipnet(args=None):
         lrs_classifier+=train_info['lrs_class']
 
         # Evaluate model
-        eval_info = eval_pipnet(net, testloader, epoch, device, log)
+        eval_info = eval_pipnet(net, testloader, projectloader, epoch, device, log)
         log.log_values('log_epoch_overview', epoch, eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], train_info['train_accuracy'], train_info['loss'])
             
         with torch.no_grad():
@@ -280,6 +282,7 @@ def run_pipnet(args=None):
     topks = visualize_topk(net, projectloader, len(classes), device, 'visualised_prototypes_topk', args)
     # set weights of prototypes that are never really found in projection set to 0
     set_to_zero = []
+    #topks = []
     if topks:
         for prot in topks.keys():
             found = False
@@ -290,9 +293,14 @@ def run_pipnet(args=None):
                 torch.nn.init.zeros_(net.module._classification.weight[:,prot])
                 set_to_zero.append(prot)
         print("Weights of prototypes", set_to_zero, "are set to zero because it is never detected with similarity>0.1 in the training set", flush=True)
-        eval_info = eval_pipnet(net, testloader, "notused"+str(args.epochs), device, log)
+        eval_info = eval_pipnet(net, testloader, projectloader, "notused"+str(args.epochs), device, log)
         log.log_values('log_epoch_overview', "notused"+str(args.epochs), eval_info['top1_accuracy'], eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'], eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], "n.a.", "n.a.")
-
+    '''
+        eval_info = eval_pipnet(net, testloader, projectloader,"notused" + str(args.epochs), device, log)
+        log.log_values('log_epoch_overview', "notused" + str(args.epochs), eval_info['top1_accuracy'],
+                       eval_info['top5_accuracy'], eval_info['almost_sim_nonzeros'], eval_info['local_size_all_classes'],
+                       eval_info['almost_nonzeros'], eval_info['num non-zero prototypes'], "n.a.", "n.a.")
+    '''
     print("classifier weights: ", net.module._classification.weight, flush=True)
     print("Classifier weights nonzero: ", net.module._classification.weight[net.module._classification.weight.nonzero(as_tuple=True)], (net.module._classification.weight[net.module._classification.weight.nonzero(as_tuple=True)]).shape, flush=True)
     print("Classifier bias: ", net.module._classification.bias, flush=True)
@@ -329,7 +337,7 @@ def run_pipnet(args=None):
         cubthreshold = 0.5
         csvfile_all = get_proto_patches_cub(net, test_projectloader, 'test_'+str(epoch), device, args, threshold=cubthreshold)
         eval_prototypes_cub_parts_csv(csvfile_all, parts_loc_path, parts_name_path, imgs_id_path, 'test_all_thres'+str(cubthreshold)+'_'+str(epoch), args, log)
-        
+
     # visualize predictions 
     visualize(net, projectloader, len(classes), device, 'visualised_prototypes', args)
     testset_img0_path = test_projectloader.dataset.samples[0][0]

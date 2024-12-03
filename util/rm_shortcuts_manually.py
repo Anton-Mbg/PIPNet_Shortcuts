@@ -14,9 +14,19 @@ import pandas as pd
 
 @torch.no_grad()
 def removeShortcutsManually(net, dirShortcutIds):
-    df = pd.read_csv(dirShortcutIds, sep=",", names="ID", skiprows=0, na_values=["n.a."])
-    listOfPrototypeIDs = df["ID"].tolist()
-    for p in listOfPrototypeIDs:
-        net.module._classification.weight[p] = 0
+    try:
+        with open(dirShortcutIds, 'r') as file:
+            # Jede Zeile lesen, Leerzeichen entfernen und in eine Ganzzahl umwandeln
+            listOfPrototypeIDs = [int(line.strip()) for line in file if line.strip()]
+            for p in listOfPrototypeIDs:
+                net.module._classification.weight[:,p] = 0
+    except FileNotFoundError:
+        print(f"Die Datei '{dirShortcutIds}' wurde nicht gefunden.")
+        return []
+    except ValueError:
+        print("Die Datei enthält ungültige Daten (keine Ganzzahlen).")
+        return []
+
+
 
 

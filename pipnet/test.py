@@ -8,9 +8,13 @@ from util.log import Log
 from util.func import topk_accuracy
 from sklearn.metrics import accuracy_score, roc_auc_score, balanced_accuracy_score, f1_score
 
+from util.sort_img_by_place import get_acc_per_group
+
+
 @torch.no_grad()
 def eval_pipnet(net,
         test_loader: DataLoader,
+        projectloader: DataLoader,
         epoch,
         device,
         log: Log = None,  
@@ -42,13 +46,17 @@ def eval_pipnet(net,
                         ncols=0)
     (xs, ys) = next(iter(test_loader))
     # Iterate through the test set
+
+    img_pred_dir = {}
     for i, (xs, ys) in test_iter:
         xs, ys = xs.to(device), ys.to(device)
-        
+        #filename = test_loader.dataset.imgs[i][0].split("/")[-1]
+
         with torch.no_grad():
             net.module._classification.weight.copy_(torch.clamp(net.module._classification.weight.data - 1e-3, min=0.)) 
             # Use the model to classify this batch of input data
             _, pooled, out = net(xs, inference=True)
+
             max_out_score, ys_pred = torch.max(out, dim=1)
             ys_pred_scores = torch.amax(F.softmax((torch.log1p(out**net.module._classification.normalization_multiplier)),dim=1),dim=1)
             abstained += (max_out_score.shape[0] - torch.count_nonzero(max_out_score))
@@ -57,6 +65,7 @@ def eval_pipnet(net,
             local_size = torch.count_nonzero(torch.gt(torch.relu((pooled*repeated_weight)-1e-3).sum(dim=1), 0.).float(),dim=1).float()
             local_size_total += local_size.sum().item()
 
+            #img_pred_dir[filename] = ys_pred[i]
             
             correct_class_sim_scores_anz = torch.diagonal(torch.index_select(sim_scores_anz, dim=0, index=ys_pred),0)
             global_sim_anz += correct_class_sim_scores_anz.sum().item()
@@ -70,6 +79,7 @@ def eval_pipnet(net,
                 cm[y_true][y_pred] += 1
                 cm_batch[y_true][y_pred] += 1
             acc = acc_from_cm(cm_batch)
+
             test_iter.set_postfix_str(
                 f'SimANZCC: {correct_class_sim_scores_anz.mean().item():.2f}, ANZ: {almost_nz.mean().item():.1f}, LocS: {local_size.mean().item():.1f}, Acc: {acc:.3f}', refresh=False
             )    
@@ -85,7 +95,38 @@ def eval_pipnet(net,
         del out
         del pooled
         del ys_pred
-        
+
+
+    file_pred_dir = {}
+    imgs = projectloader.dataset.imgs
+    img_iter = tqdm(enumerate(projectloader),
+                    total=len(projectloader),
+                    mininterval=50.,
+                    desc='Collecting group accuracies',
+                    ncols=0)
+
+    for i ,(xs,ys) in img_iter:
+        _, pooled, out = net(xs, inference=True)
+
+        max_out_score, ys_pred = torch.max(out, dim=1)
+        img_name = imgs[i][0].split("/")[-1]
+        file_pred_dir[img_name] = ys_pred
+    lb_on_land_acc, lb_on_water_acc, wb_on_land_acc, wb_on_water_acc = get_acc_per_group(file_pred_dir)
+
+
+    # Make sure the model is in evaluation mode
+    net.eval()
+    classification_weights = net.module._classification.weight
+
+    # Show progress on progress bar
+    img_iter = tqdm(enumerate(projectloader),
+                    total=len(projectloader),
+                    mininterval=50.,
+                    desc='Collecting topk',
+                    ncols=0)
+
+    for i, (xs, ys) in img_iter:
+        image_name = imgs[i]
     print("PIP-Net abstained from a decision for", abstained.item(), "images", flush=True)            
     info['num non-zero prototypes'] = torch.gt(net.module._classification.weight,1e-3).any(dim=0).sum().item()
     print("sparsity ratio: ", (torch.numel(net.module._classification.weight)-torch.count_nonzero(torch.nn.functional.relu(net.module._classification.weight-1e-3)).item()) / torch.numel(net.module._classification.weight), flush=True)
@@ -188,7 +229,7 @@ def get_thresholds(net,
                 outputs_per_class[ys_pred[pred].item()].append(out[pred,:].max().item())
                 if ys_pred[pred].item()==ys[pred].item():
                     outputs_per_correct_class[ys_pred[pred].item()].append(out[pred,:].max().item())
-        
+
         del out
         del pooled
         del ys_pred
